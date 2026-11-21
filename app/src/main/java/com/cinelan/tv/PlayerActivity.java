@@ -15,9 +15,10 @@ import org.videolan.libvlc.MediaPlayer;
 import org.videolan.libvlc.util.VLCVideoLayout;
 import java.util.ArrayList;
 
-/** Media is opened directly from SMB; login is stored in app RAM only. */
+/** Playback uses a local stream backed by SMBJ. */
 public final class PlayerActivity extends Activity {
     private LibVLC libVlc;
+    private SmbStream stream;
     private MediaPlayer player;
     private VLCVideoLayout surface;
     private TextView hint;
@@ -41,7 +42,7 @@ public final class PlayerActivity extends Activity {
         hint.setBackgroundColor(0x99000000);
         hint.setTextSize(16);
         hint.setPadding(24, 14, 24, 14);
-        hint.setText("OK: пауза / воспроизведение   •   ←/→: ±10 сек   •   Назад: закрыть");
+        hint.setText("OK: пауза / воспроизведение   •   ←/→: ±10 сек   •   ↑: дорожки   •   Назад: закрыть");
         FrameLayout.LayoutParams h = new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM);
         root.addView(hint, h);
         setContentView(root);
@@ -57,7 +58,8 @@ public final class PlayerActivity extends Activity {
             String name = getIntent().getStringExtra("title");
             if (share == null || path == null) throw new IllegalArgumentException("No SMB path");
             SmbRepository.Entry entry = new SmbRepository.Entry(share, path, name, false);
-            Media media = new Media(libVlc, android.net.Uri.parse(AppSession.SMB.smbUrl(entry)));
+            stream = AppSession.SMB.openStream(entry);
+            Media media = new Media(libVlc, android.net.Uri.parse(stream.url()));
             media.setHWDecoderEnabled(true, false);
             player.setMedia(media);
             media.release();
@@ -86,6 +88,10 @@ public final class PlayerActivity extends Activity {
             hint.setVisibility(View.VISIBLE);
             return true;
         }
+        if (keyCode == KeyEvent.KEYCODE_MENU || keyCode == KeyEvent.KEYCODE_DPAD_UP) {
+            showTracks();
+            return true;
+        }
         if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
             long length = player.getLength();
             long next = Math.max(0, player.getTime() + (keyCode == KeyEvent.KEYCODE_DPAD_LEFT ? -10000 : 10000));
@@ -96,6 +102,24 @@ public final class PlayerActivity extends Activity {
         }
         return super.onKeyDown(keyCode, event);
     }
+    private void showTracks() {
+        new android.app.AlertDialog.Builder(this)
+                .setItems(new String[]{"Звуковая дорожка", "Субтитры"}, (dialog, which) -> {
+                    MediaPlayer.TrackDescription[] tracks = which == 0 ? player.getAudioTracks() : player.getSpuTracks();
+                    if (tracks == null || tracks.length == 0) {
+                        Toast.makeText(this, "Дорожки недоступны", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    String[] names = new String[tracks.length];
+                    for (int i = 0; i < tracks.length; i++) names[i] = tracks[i].name;
+                    new android.app.AlertDialog.Builder(this).setTitle(which == 0 ? "Звуковая дорожка" : "Субтитры")
+                            .setItems(names, (d, index) -> {
+                                if (which == 0) player.setAudioTrack(tracks[index].id);
+                                else player.setSpuTrack(tracks[index].id);
+                            }).show();
+                }).show();
+    }
+
     @Override protected void onStop() {
         if (player != null) player.stop();
         super.onStop();
@@ -108,6 +132,7 @@ public final class PlayerActivity extends Activity {
             player = null;
         }
         if (libVlc != null) { libVlc.release(); libVlc = null; }
+        if (stream != null) { stream.close(); stream = null; }
         super.onDestroy();
     }
 }

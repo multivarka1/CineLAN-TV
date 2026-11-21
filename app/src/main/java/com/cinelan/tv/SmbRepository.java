@@ -66,15 +66,8 @@ final class SmbRepository {
                 s.endsWith(".mpeg") || s.endsWith(".m4v");
     }
 
-    String smbUrl(Entry entry) {
-        // URI-encoded credentials are passed only in process memory to LibVLC.
-        // Do not log, share, or persist this URI.
-        String user = android.net.Uri.encode(username);
-        String pass = android.net.Uri.encode(password);
-        StringBuilder url = new StringBuilder("smb://").append(user).append(":").append(pass)
-                .append("@").append(host).append("/").append(android.net.Uri.encode(entry.share));
-        for (String piece : entry.path.split("\\\\")) url.append("/").append(android.net.Uri.encode(piece));
-        return url.toString();
+    SmbStream openStream(Entry entry) throws Exception {
+        return new SmbStream(host, username, password, domain, entry);
     }
 
     static final class Entry {
