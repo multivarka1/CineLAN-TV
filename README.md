@@ -24,7 +24,7 @@ The debug APK is built with JDK 17, Gradle 8.9 and Android SDK 35. SMB access an
 1. Open the repository's **Actions** tab and select **Android TV APK**.
 2. Choose **Run workflow** and select the branch to build, or push to `main`.
 3. Open the completed run and download **CineLAN-TV-debug-apk** from **Artifacts**.
-4. Extract `app-debug.apk` from the downloaded archive.
+4. Extract `CineLAN-TV-debug.apk` from the downloaded archive.
 
 Local build (with Android SDK 35, JDK 17, Gradle 8.9):
 
@@ -32,7 +32,7 @@ Local build (with Android SDK 35, JDK 17, Gradle 8.9):
 ./gradlew :app:assembleDebug
 ```
 
-`app/build/outputs/apk/debug/app-debug.apk` is the expected output.
+`app/build/outputs/apk/debug/CineLAN-TV-debug.apk` is the expected output.
 
 ## Security and restrictions
 
@@ -57,7 +57,7 @@ Poster metadata, automatic classification, fast scan/caching, resume history, IP
 
 ## Install and connect
 
-Enable installation from the chosen source on Android TV, then install the debug APK with a file manager or `adb install -r app/build/outputs/apk/debug/app-debug.apk`. Open CineLAN TV, enter the SMB server IP (default 10.0.11.1), username, password and optional domain, then select Connect. Both `abc` and `video` must be accessible as shares.
+Enable installation from the chosen source on Android TV, then install the debug APK with a file manager or `adb install -r app/build/outputs/apk/debug/CineLAN-TV-debug.apk`. Open CineLAN TV, enter the SMB server IP (default 10.0.11.1), username, password and optional domain, then select Connect. Both `abc` and `video` must be accessible as shares.
 
 Use the D-pad to select directories and files. During playback use OK to pause or resume, left and right to seek, up or Menu to select audio and subtitle tracks, and Back to exit.
 
