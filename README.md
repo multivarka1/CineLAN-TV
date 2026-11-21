@@ -17,7 +17,7 @@ A standalone Android TV app that connects to `10.0.11.1` with a username/passwor
 
 `\\10.0.11.1\abc` and `\\10.0.11.1\video` must be **separate SMB shares**. The app treats them as `smb://10.0.11.1/abc/` and `/video/`. If those are directories in another share, adjust `SmbRepository` and the connection UI. SMB2 or SMB3 must be enabled. Your Android TV must have network access to `10.0.11.1:445` (typically within your ISP/local network).
 
-This is a **working-source MVP, not a verified APK**. A GitHub Actions runner will download the dependencies and compile the sources. The project was generated in an environment with no Android SDK/Gradle network access, so compilation and real-device playback have **not** been verified. There may be API/dependency compatibility fixes needed based on the build log.
+The debug APK is built with JDK 17, Gradle 8.9 and Android SDK 35. SMB access and playback still require verification on a real Android TV connected to the provider network.
 
 ## Build with GitHub Actions
 
@@ -30,7 +30,7 @@ This is a **working-source MVP, not a verified APK**. A GitHub Actions runner wi
 Local build (with Android SDK 35, JDK 17, Gradle 8.9):
 
 ```bash
-gradle :app:assembleDebug
+./gradlew :app:assembleDebug
 ```
 
 `app/build/outputs/apk/debug/app-debug.apk` is the expected output.
@@ -54,3 +54,14 @@ Poster metadata, automatic classification, fast scan/caching, resume history, IP
 - **STATUS_BAD_NETWORK_NAME:** `abc` / `video` might be ordinary folders rather than separate SMB shares.
 - **No route / timeout:** TV and SMB server must be reachable on the same allowed network; check TCP port 445.
 - **Folder opens, video does not:** SMBJ and LibVLC use separate SMB implementations. Inspect codec and LibVLC SMB auth; test a simple MP4 first.
+
+
+## Install and connect
+
+Enable installation from the chosen source on Android TV, then install the debug APK with a file manager or `adb install -r app/build/outputs/apk/debug/app-debug.apk`. Open CineLAN TV, enter the SMB server IP (default 10.0.11.1), username, password and optional domain, then select Connect. Both `abc` and `video` must be accessible as shares.
+
+Use the D-pad to select directories and files. During playback use OK to pause or resume, left and right to seek, and Back to exit.
+
+## Known limitations
+
+Real-device playback and SMB authentication have not been validated. LibVLC receives an in-memory URL containing credentials and may expose it in underlying diagnostic logs. Avoid sharing logs. Domain authentication in LibVLC, special characters in passwords, audio track and subtitle selection need device validation or implementation. The debug build is not a production release.

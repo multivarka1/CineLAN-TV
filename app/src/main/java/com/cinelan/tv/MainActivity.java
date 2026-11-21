@@ -60,7 +60,7 @@ public final class MainActivity extends Activity {
         setContentView(sc);
         body = root;
         body.addView(label("CINELAN  /  TV", 28, true));
-        TextView description = label("Локальный кинотеатр · SMB 10.0.11.1", 14, false);
+        TextView description = label("Локальный кинотеатр · SMB", 14, false);
         description.setTextColor(MUTED); body.addView(description);
         status = label("", 14, false); status.setTextColor(ACCENT);
         LinearLayout.LayoutParams s = new LinearLayout.LayoutParams(-1, -2);
@@ -100,24 +100,28 @@ public final class MainActivity extends Activity {
         body.addView(label("Подключение к сетевому хранилищу", 23, true));
         TextView expl = label("Папки abc и video считаются отдельными SMB-ресурсами. Учётные данные остаются только в памяти приложения.", 15, false);
         expl.setTextColor(MUTED); body.addView(expl);
+        EditText host = field("IP-адрес сервера", false);
+        host.setText(SmbRepository.HOST);
         EditText user = field("Имя пользователя SMB", false);
         EditText pass = field("Пароль", true);
         EditText domain = field("Домен (необязательно)", false);
-        Button connect = action("Подключиться к 10.0.11.1", () -> {
+        Button connect = action("Подключиться", () -> {
             String u = user.getText().toString().trim();
             String p = pass.getText().toString();
             String d = domain.getText().toString().trim();
             if (u.isEmpty()) { status.setText("Укажи имя пользователя"); return; }
-            connectWith(u, p, d);
+            String address = host.getText().toString().trim();
+            if (address.isEmpty()) { status.setText("Укажи адрес сервера"); return; }
+            connectWith(address, u, p, d);
         });
         connect.requestFocus();
     }
-    private void connectWith(String u, String p, String d) {
+    private void connectWith(String host, String u, String p, String d) {
         status.setText("Проверяю SMB-доступ к abc и video…");
         int id = ++requestId;
         io.execute(() -> {
             try {
-                AppSession.SMB.setCredentials(u, p, d);
+                AppSession.SMB.setCredentials(host, u, p, d);
                 AppSession.SMB.verify();
                 runOnUiThread(() -> { if (id == requestId) showRoot(); });
             } catch (Exception ex) {
@@ -168,8 +172,14 @@ public final class MainActivity extends Activity {
         startActivity(intent);
     }
     private String friendlyError(Exception ex) {
-        String msg = ex.getMessage();
-        return msg == null || msg.isEmpty() ? ex.getClass().getSimpleName() : msg;
+        String msg = String.valueOf(ex.getMessage()).toUpperCase(java.util.Locale.ROOT);
+        if (msg.contains("LOGON_FAILURE") || msg.contains("WRONG_PASSWORD") || msg.contains("ACCESS_DENIED"))
+            return "Ошибка авторизации или доступ запрещён. Проверьте логин, пароль и права.";
+        if (msg.contains("BAD_NETWORK_NAME") || msg.contains("OBJECT_NAME_NOT_FOUND"))
+            return "SMB-ресурс не найден. Проверьте имена общих ресурсов abc и video.";
+        if (ex instanceof java.io.IOException)
+            return "Сервер недоступен. Проверьте адрес, сеть и порт 445.";
+        return "Не удалось подключиться к SMB. Проверьте настройки и доступ к ресурсам.";
     }
     private void goBack() {
         ++requestId;

@@ -16,11 +16,13 @@ import java.util.Locale;
 /** SMB2/SMB3 browser. Never persists the password to disk. */
 final class SmbRepository {
     static final String HOST = "10.0.11.1";
+    private String host = HOST;
     private String username;
     private String password;
     private String domain;
 
-    void setCredentials(String user, String pass, String domain) {
+    void setCredentials(String host, String user, String pass, String domain) {
+        this.host = host;
         this.username = user;
         this.password = pass;
         this.domain = domain;
@@ -30,7 +32,7 @@ final class SmbRepository {
 
     List<Entry> list(String shareName, String relativePath) throws Exception {
         if (!hasCredentials()) throw new IllegalStateException("Введите логин и пароль");
-        try (SMBClient client = new SMBClient(); Connection connection = client.connect(HOST)) {
+        try (SMBClient client = new SMBClient(); Connection connection = client.connect(host)) {
             AuthenticationContext auth = new AuthenticationContext(username, password.toCharArray(), domain);
             try (Session session = connection.authenticate(auth);
                  DiskShare share = (DiskShare) session.connectShare(shareName)) {
@@ -70,7 +72,7 @@ final class SmbRepository {
         String user = android.net.Uri.encode(username);
         String pass = android.net.Uri.encode(password);
         StringBuilder url = new StringBuilder("smb://").append(user).append(":").append(pass)
-                .append("@").append(HOST).append("/").append(android.net.Uri.encode(entry.share));
+                .append("@").append(host).append("/").append(android.net.Uri.encode(entry.share));
         for (String piece : entry.path.split("\\\\")) url.append("/").append(android.net.Uri.encode(piece));
         return url.toString();
     }
