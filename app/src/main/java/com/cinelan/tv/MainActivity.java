@@ -7,6 +7,13 @@ import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.text.InputType;
+import android.text.Editable;
+import android.text.TextWatcher;
+import android.os.Handler;
+import android.os.Looper;
+import android.widget.BaseAdapter;
+import android.widget.ListView;
+import java.util.ArrayList;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -27,6 +34,13 @@ public final class MainActivity extends Activity {
     private static final int ACCENT = Color.rgb(100, 210, 255);
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private LinearLayout body;
+    private MediaIndex index;
+    private boolean searching;
+    private final Handler handler = new Handler(Looper.getMainLooper());
+    private final ExecutorService searchExecutor = Executors.newSingleThreadExecutor();
+    private int searchId;
+    private Runnable searchRefresh;
+    private Runnable pendingSearch;
     private TextView status;
     private String share = null;
     private String path = "";
@@ -123,7 +137,11 @@ public final class MainActivity extends Activity {
             try {
                 AppSession.SMB.setCredentials(host, u, p, d);
                 AppSession.SMB.verify();
-                runOnUiThread(() -> { if (id == requestId) showRoot(); });
+                runOnUiThread(() -> { if (id == requestId) {
+                    if (index != null) index.close();
+                    index = AppSession.SMB.startIndex();
+                    showRoot();
+                } });
             } catch (Exception ex) {
                 String message = friendlyError(ex);
                 runOnUiThread(() -> { if (id == requestId) status.setText("Ошибка подключения: " + message); });
@@ -136,27 +154,102 @@ public final class MainActivity extends Activity {
         status.setText("Подключено · выбери сетевой ресурс");
         action("📁  abc — каталог по алфавиту", () -> openFolder("abc", ""));
         action("📁  video — общая видеотека", () -> openFolder("video", ""));
-        action("Сменить учётную запись", this::showLogin);
+        action("🔎  Поиск по медиатеке", this::showSearch);
+        action("Обновить индекс медиатеки", () -> {
+            if (index != null) index.close();
+            index = AppSession.SMB.startIndex();
+            status.setText("Индексация запущена в фоне");
+        });
+        action("Сменить учётную запись", () -> {
+            if (index != null) { index.close(); index = null; }
+            showLogin();
+        });
     }
+    private Button listButton(String text) {
+        Button button = new Button(this);
+        button.setAllCaps(false);
+        button.setTextSize(17);
+        button.setTextColor(Color.WHITE);
+        button.setBackground(background(CARD, 12));
+        button.setPadding(dp(18), dp(10), dp(18), dp(10));
+        button.setOnFocusChangeListener((v, focused) ->
+                v.setBackground(background(focused ? 0xFF176B91 : CARD, 12)));
+        button.setText(text);
+        return button;
+    }
+
+    private final class EntryAdapter extends BaseAdapter {
+        private List<SmbRepository.Entry> items = new ArrayList<>();
+        private final boolean showPath;
+
+        EntryAdapter(boolean showPath) { this.showPath = showPath; }
+        void setItems(List<SmbRepository.Entry> entries) { items = entries; notifyDataSetChanged(); }
+        @Override public int getCount() { return items.size(); }
+        @Override public SmbRepository.Entry getItem(int position) { return items.get(position); }
+        @Override public long getItemId(int position) { return position; }
+        @Override public View getView(int position, View recycled, ViewGroup parent) {
+            TextView row = recycled instanceof TextView ? (TextView) recycled : new TextView(MainActivity.this);
+            SmbRepository.Entry item = getItem(position);
+            row.setText((item.directory ? "📁  " : "▶  ") + item.name
+                    + (showPath ? "\n" + item.share + " / " + item.path.replace('\\', '/') : ""));
+            row.setTextColor(Color.WHITE);
+            row.setTextSize(17);
+            row.setPadding(dp(18), dp(12), dp(18), dp(12));
+            row.setMinHeight(dp(56));
+            return row;
+        }
+    }
+
+    private LinearLayout listScreen(String title) {
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(dp(40), dp(18), dp(40), dp(18));
+        root.setBackgroundColor(BG);
+        root.addView(label(title, 23, true));
+        status = label("", 14, false);
+        status.setTextColor(ACCENT);
+        root.addView(status);
+        setContentView(root);
+        return root;
+    }
+
+    private ListView addList(LinearLayout root, EntryAdapter adapter) {
+        ListView list = new ListView(this);
+        list.setAdapter(adapter);
+        list.setSelector(android.R.drawable.list_selector_background);
+        list.setOnItemClickListener((parent, view, position, id) -> {
+            SmbRepository.Entry item = adapter.getItem(position);
+            if (item.directory) {
+                stopSearchRefresh();
+                searching = false;
+                openFolder(item.share, item.path);
+            } else {
+                play(item);
+            }
+        });
+        root.addView(list, new LinearLayout.LayoutParams(-1, 0, 1));
+        return list;
+    }
+
     private void openFolder(String newShare, String newPath) {
+        searching = false;
+        stopSearchRefresh();
         share = newShare; path = newPath;
-        panel(); body.addView(label("Обзор: " + share + (path.isEmpty() ? "" : " / " + path.replace('\\', '/')), 20, true));
+        LinearLayout root = listScreen("Обзор: " + share + (path.isEmpty() ? "" : " / " + path.replace('\\', '/')));
         status.setText("Загружаю содержимое…");
-        action("← Назад", this::goBack);
+        Button back = listButton("← Назад");
+        back.setOnClickListener(v -> goBack());
+        root.addView(back);
+        EntryAdapter adapter = new EntryAdapter(false);
+        addList(root, adapter);
         int id = ++requestId;
         io.execute(() -> {
             try {
                 List<SmbRepository.Entry> items = AppSession.SMB.list(newShare, newPath);
                 runOnUiThread(() -> {
                     if (id != requestId) return;
-                    status.setText("Найдено элементов: " + items.size());
-                    if (items.isEmpty()) body.addView(label("В этой папке нет поддерживаемых видео или подпапок", 16, false));
-                    for (SmbRepository.Entry item : items) {
-                        action((item.directory ? "📁  " : "▶  ") + item.name, () -> {
-                            if (item.directory) openFolder(item.share, item.path);
-                            else play(item);
-                        });
-                    }
+                    status.setText(items.isEmpty() ? "В этой папке нет видео или подпапок" : "Найдено элементов: " + items.size());
+                    adapter.setItems(items);
                 });
             } catch (Exception ex) {
                 String error = friendlyError(ex);
@@ -164,6 +257,71 @@ public final class MainActivity extends Activity {
             }
         });
     }
+
+    private void showSearch() {
+        searching = true;
+        ++requestId;
+        LinearLayout root = listScreen("Поиск по медиатеке");
+        EditText query = new EditText(this);
+        query.setSingleLine();
+        query.setTextColor(Color.WHITE);
+        query.setHintTextColor(MUTED);
+        query.setHint("Название фильма или папки");
+        root.addView(query);
+        Button back = listButton("← Назад");
+        back.setOnClickListener(v -> goBack());
+        root.addView(back);
+        EntryAdapter adapter = new EntryAdapter(true);
+        addList(root, adapter);
+        Runnable update = () -> updateSearch(query.getText().toString(), adapter);
+        query.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
+                if (pendingSearch != null) handler.removeCallbacks(pendingSearch);
+                ++searchId;
+                pendingSearch = update;
+                handler.postDelayed(pendingSearch, 250);
+            }
+            @Override public void afterTextChanged(Editable s) { }
+        });
+        searchRefresh = new Runnable() {
+            @Override public void run() {
+                if (!searching) return;
+                update.run();
+                if (index != null && !index.isComplete()) handler.postDelayed(this, 1500);
+            }
+        };
+        searchRefresh.run();
+        query.requestFocus();
+    }
+
+    private void updateSearch(String query, EntryAdapter adapter) {
+        MediaIndex current = index;
+        int id = ++searchId;
+        if (current == null) return;
+        searchExecutor.execute(() -> {
+            List<SmbRepository.Entry> results = current.search(query);
+            int count = current.size();
+            boolean complete = current.isComplete();
+            int errors = current.errors();
+            runOnUiThread(() -> {
+                if (!searching || id != searchId || index != current) return;
+                adapter.setItems(results);
+                String progress = complete ? "Индексация завершена" : "Индексация…";
+                status.setText(progress + " · записей: " + count + " · найдено: " + results.size()
+                        + (errors > 0 ? " · недоступных папок: " + errors : ""));
+            });
+        });
+    }
+
+    private void stopSearchRefresh() {
+        ++searchId;
+        if (searchRefresh != null) handler.removeCallbacks(searchRefresh);
+        if (pendingSearch != null) handler.removeCallbacks(pendingSearch);
+        searchRefresh = null;
+        pendingSearch = null;
+    }
+
     private void play(SmbRepository.Entry entry) {
         Intent intent = new Intent(this, PlayerActivity.class);
         intent.putExtra("share", entry.share);
@@ -183,11 +341,17 @@ public final class MainActivity extends Activity {
     }
     private void goBack() {
         ++requestId;
+        if (searching) {
+            searching = false;
+            stopSearchRefresh();
+            showRoot();
+            return;
+        }
         if (share == null) { showLogin(); return; }
         if (path.isEmpty()) { showRoot(); return; }
         int index = path.lastIndexOf('\\');
         openFolder(share, index < 0 ? "" : path.substring(0, index));
     }
     @Override public void onBackPressed() { goBack(); }
-    @Override protected void onDestroy() { ++requestId; io.shutdownNow(); super.onDestroy(); }
+    @Override protected void onDestroy() { ++requestId; stopSearchRefresh(); if (index != null) index.close(); searchExecutor.shutdownNow(); io.shutdownNow(); super.onDestroy(); }
 }

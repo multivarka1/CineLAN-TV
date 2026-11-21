@@ -7,7 +7,8 @@ A standalone Android TV app that connects to `10.0.11.1` with a username/passwor
 - TV launcher, landscape dark UI, D-pad focus and scrolling
 - SMB2/3 login (username, password, optional domain)
 - Verify access to **both** SMB shares
-- Browse nested directories and filter video extensions
+- Browse nested directories in a recycled list and filter video extensions
+- Search both shares while an in-memory index is built in the background; refresh it from the library screen
 - LibVLC playback through a loopback HTTP stream backed by SMBJ, with byte-range seeking
 - Basic D-pad controls: OK pause, left/right seek ±10 s, Back exit
 - GitHub Actions debug APK build and downloadable artifact
@@ -64,3 +65,5 @@ Use the D-pad to select directories and files. During playback use OK to pause o
 ## Known limitations
 
 Real-device playback and SMB authentication have not been validated. SMB authentication, loopback streaming, seeking, track selection and passwords containing special characters need validation on a real device. The debug build is not a production release.
+
+The search index is kept in memory for the current app session. Indexing can take time on large or slow shares, and inaccessible folders are counted on the search screen. Use **Обновить индекс медиатеки** after files change.

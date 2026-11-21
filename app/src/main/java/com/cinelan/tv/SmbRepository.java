@@ -8,6 +8,12 @@ import com.hierynomus.smbj.connection.Connection;
 import com.hierynomus.smbj.session.Session;
 import com.hierynomus.smbj.auth.AuthenticationContext;
 import com.hierynomus.smbj.share.DiskShare;
+import com.hierynomus.msdtyp.AccessMask;
+import com.hierynomus.mssmb2.SMB2CreateDisposition;
+import com.hierynomus.mssmb2.SMB2CreateOptions;
+import com.hierynomus.mssmb2.SMB2ShareAccess;
+import com.hierynomus.smbj.share.Directory;
+import java.util.EnumSet;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -53,9 +59,18 @@ final class SmbRepository {
     }
 
     void verify() throws Exception {
-        // Test both shares. If access is blocked, report the actual SMB error.
-        list("abc", "");
-        list("video", "");
+        if (!hasCredentials()) throw new IllegalStateException("Введите логин и пароль");
+        try (SMBClient client = new SMBClient(); Connection connection = client.connect(host);
+             Session session = connection.authenticate(new AuthenticationContext(username, password.toCharArray(), domain))) {
+            for (String name : new String[]{"abc", "video"}) {
+                try (DiskShare share = (DiskShare) session.connectShare(name);
+                     Directory directory = share.openDirectory("", EnumSet.of(AccessMask.FILE_LIST_DIRECTORY),
+                             EnumSet.noneOf(FileAttributes.class), SMB2ShareAccess.ALL,
+                             SMB2CreateDisposition.FILE_OPEN, EnumSet.noneOf(SMB2CreateOptions.class))) {
+                    // Opening each share's root checks access without enumerating it.
+                }
+            }
+        }
     }
 
     static boolean isVideo(String fileName) {
@@ -64,6 +79,12 @@ final class SmbRepository {
                 s.endsWith(".mov") || s.endsWith(".ts") || s.endsWith(".m2ts") ||
                 s.endsWith(".wmv") || s.endsWith(".webm") || s.endsWith(".mpg") ||
                 s.endsWith(".mpeg") || s.endsWith(".m4v");
+    }
+
+    MediaIndex startIndex() {
+        MediaIndex index = new MediaIndex();
+        index.start(host, username, password, domain);
+        return index;
     }
 
     SmbStream openStream(Entry entry) throws Exception {
