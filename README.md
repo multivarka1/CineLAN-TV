@@ -7,8 +7,9 @@ A standalone Android TV app that connects to `10.0.11.1` with a username/passwor
 - TV launcher, landscape dark UI, D-pad focus and scrolling
 - SMB2/3 login (username, password, optional domain)
 - Verify access to **both** SMB shares
-- Browse nested directories and filter video extensions
-- Direct LibVLC playback from `smb://` URL
+- Browse nested directories in a recycled list and filter video extensions
+- Search both shares while an in-memory index is built in the background; refresh it from the library screen
+- LibVLC playback through a loopback HTTP stream backed by SMBJ, with byte-range seeking
 - Basic D-pad controls: OK pause, left/right seek ±10 s, Back exit
 - GitHub Actions debug APK build and downloadable artifact
 - Credentials held only in process memory, never in repository/preferences
@@ -17,30 +18,29 @@ A standalone Android TV app that connects to `10.0.11.1` with a username/passwor
 
 `\\10.0.11.1\abc` and `\\10.0.11.1\video` must be **separate SMB shares**. The app treats them as `smb://10.0.11.1/abc/` and `/video/`. If those are directories in another share, adjust `SmbRepository` and the connection UI. SMB2 or SMB3 must be enabled. Your Android TV must have network access to `10.0.11.1:445` (typically within your ISP/local network).
 
-This is a **working-source MVP, not a verified APK**. A GitHub Actions runner will download the dependencies and compile the sources. The project was generated in an environment with no Android SDK/Gradle network access, so compilation and real-device playback have **not** been verified. There may be API/dependency compatibility fixes needed based on the build log.
+The debug APK is built with JDK 17, Gradle 8.9 and Android SDK 35. SMB access and playback still require verification on a real Android TV connected to the provider network.
 
 ## Build with GitHub Actions
 
-1. Create an empty GitHub repository, e.g. `CineLAN-TV`.
-2. Upload **all files and folders** from this ZIP into the repository root (including `.github/workflows/android.yml`).
-3. Go to **Actions → Android TV APK → Run workflow**, or push to `main`.
-4. Open the workflow run → **Artifacts → CineLAN-TV-debug-apk**.
-5. Download ZIP, extract `app-debug.apk`, install on your TV using ADB or a file manager.
+1. Open the repository's **Actions** tab and select **Android TV APK**.
+2. Choose **Run workflow** and select the branch to build, or push to `main`.
+3. Open the completed run and download **CineLAN-TV-debug-apk** from **Artifacts**.
+4. Extract `CineLAN-TV-debug.apk` from the downloaded archive.
 
 Local build (with Android SDK 35, JDK 17, Gradle 8.9):
 
 ```bash
-gradle :app:assembleDebug
+./gradlew :app:assembleDebug
 ```
 
-`app/build/outputs/apk/debug/app-debug.apk` is the expected output.
+`app/build/outputs/apk/debug/CineLAN-TV-debug.apk` is the expected output.
 
 ## Security and restrictions
 
 - No credentials are hard-coded or committed, and no password is persisted.
-- LibVLC receives credentials in the SMB URL held only in memory. While convenient for MVP, URL credentials can potentially appear in diagnostic logs in underlying playback libraries. Avoid sharing diagnostic logs and consider a secure SMB-to-local-stream bridge for a production release.
+- SMB credentials remain in app memory and are used by SMBJ. LibVLC receives a random-token loopback URL without credentials.
 - This app deliberately does not bypass provider authorization or access restrictions.
-- To keep the prototype simple, targetSdk is 28 and cleartext traffic is enabled for the local-network SMB stack. Update targetSdk and network policy for production.
+- The prototype uses targetSdk 28. Loopback HTTP is enabled for local playback. Update targetSdk for production.
 - Some provider streams/codecs and complex passwords may need further validation on the real TV device.
 - For bundled LibVLC, follow the upstream LGPL license requirements before distribution.
 
@@ -53,4 +53,17 @@ Poster metadata, automatic classification, fast scan/caching, resume history, IP
 - **Permission denied / STATUS_LOGON_FAILURE:** Verify account and password; if a Windows/AD domain is needed, fill in Domain.
 - **STATUS_BAD_NETWORK_NAME:** `abc` / `video` might be ordinary folders rather than separate SMB shares.
 - **No route / timeout:** TV and SMB server must be reachable on the same allowed network; check TCP port 445.
-- **Folder opens, video does not:** SMBJ and LibVLC use separate SMB implementations. Inspect codec and LibVLC SMB auth; test a simple MP4 first.
+- **Folder opens, video does not:** Check network connectivity and codec support; test a simple MP4 first.
+
+
+## Install and connect
+
+Enable installation from the chosen source on Android TV, then install the debug APK with a file manager or `adb install -r app/build/outputs/apk/debug/CineLAN-TV-debug.apk`. Open CineLAN TV, enter the SMB server IP (default 10.0.11.1), username, password and optional domain, then select Connect. Both `abc` and `video` must be accessible as shares.
+
+Use the D-pad to select directories and files. During playback use OK to pause or resume, left and right to seek, up or Menu to select audio and subtitle tracks, and Back to exit.
+
+## Known limitations
+
+Real-device playback and SMB authentication have not been validated. SMB authentication, loopback streaming, seeking, track selection and passwords containing special characters need validation on a real device. The debug build is not a production release.
+
+The search index is kept in memory for the current app session. Indexing can take time on large or slow shares, and inaccessible folders are counted on the search screen. Use **Обновить индекс медиатеки** after files change.

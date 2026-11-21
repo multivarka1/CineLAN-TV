@@ -8,6 +8,12 @@ import com.hierynomus.smbj.connection.Connection;
 import com.hierynomus.smbj.session.Session;
 import com.hierynomus.smbj.auth.AuthenticationContext;
 import com.hierynomus.smbj.share.DiskShare;
+import com.hierynomus.msdtyp.AccessMask;
+import com.hierynomus.mssmb2.SMB2CreateDisposition;
+import com.hierynomus.mssmb2.SMB2CreateOptions;
+import com.hierynomus.mssmb2.SMB2ShareAccess;
+import com.hierynomus.smbj.share.Directory;
+import java.util.EnumSet;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -16,11 +22,13 @@ import java.util.Locale;
 /** SMB2/SMB3 browser. Never persists the password to disk. */
 final class SmbRepository {
     static final String HOST = "10.0.11.1";
+    private String host = HOST;
     private String username;
     private String password;
     private String domain;
 
-    void setCredentials(String user, String pass, String domain) {
+    void setCredentials(String host, String user, String pass, String domain) {
+        this.host = host;
         this.username = user;
         this.password = pass;
         this.domain = domain;
@@ -30,7 +38,7 @@ final class SmbRepository {
 
     List<Entry> list(String shareName, String relativePath) throws Exception {
         if (!hasCredentials()) throw new IllegalStateException("Введите логин и пароль");
-        try (SMBClient client = new SMBClient(); Connection connection = client.connect(HOST)) {
+        try (SMBClient client = new SMBClient(); Connection connection = client.connect(host)) {
             AuthenticationContext auth = new AuthenticationContext(username, password.toCharArray(), domain);
             try (Session session = connection.authenticate(auth);
                  DiskShare share = (DiskShare) session.connectShare(shareName)) {
@@ -51,9 +59,18 @@ final class SmbRepository {
     }
 
     void verify() throws Exception {
-        // Test both shares. If access is blocked, report the actual SMB error.
-        list("abc", "");
-        list("video", "");
+        if (!hasCredentials()) throw new IllegalStateException("Введите логин и пароль");
+        try (SMBClient client = new SMBClient(); Connection connection = client.connect(host);
+             Session session = connection.authenticate(new AuthenticationContext(username, password.toCharArray(), domain))) {
+            for (String name : new String[]{"abc", "video"}) {
+                try (DiskShare share = (DiskShare) session.connectShare(name);
+                     Directory directory = share.openDirectory("", EnumSet.of(AccessMask.FILE_LIST_DIRECTORY),
+                             EnumSet.noneOf(FileAttributes.class), SMB2ShareAccess.ALL,
+                             SMB2CreateDisposition.FILE_OPEN, EnumSet.noneOf(SMB2CreateOptions.class))) {
+                    // Opening each share's root checks access without enumerating it.
+                }
+            }
+        }
     }
 
     static boolean isVideo(String fileName) {
@@ -64,15 +81,14 @@ final class SmbRepository {
                 s.endsWith(".mpeg") || s.endsWith(".m4v");
     }
 
-    String smbUrl(Entry entry) {
-        // URI-encoded credentials are passed only in process memory to LibVLC.
-        // Do not log, share, or persist this URI.
-        String user = android.net.Uri.encode(username);
-        String pass = android.net.Uri.encode(password);
-        StringBuilder url = new StringBuilder("smb://").append(user).append(":").append(pass)
-                .append("@").append(HOST).append("/").append(android.net.Uri.encode(entry.share));
-        for (String piece : entry.path.split("\\\\")) url.append("/").append(android.net.Uri.encode(piece));
-        return url.toString();
+    MediaIndex startIndex() {
+        MediaIndex index = new MediaIndex();
+        index.start(host, username, password, domain);
+        return index;
+    }
+
+    SmbStream openStream(Entry entry) throws Exception {
+        return new SmbStream(host, username, password, domain, entry);
     }
 
     static final class Entry {
